@@ -3,4 +3,3 @@ cd sbitx
 ./sbitx
 bash
 read -p "Press enter to continue..."
-

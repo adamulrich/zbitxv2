@@ -265,6 +265,7 @@
 					<button id="ft8-call-cq">Call </button> 
 					<select class="sbitx-selection" id="ft8_cq_kindof">
 						<option value="CQ">CQ</option>
+						<option value="CQ FD">CQ FD</option>
 						<option value="CQ DX">CQ DX</option>
 						<option value="CQ GRID">CW GRID</option>
 						<option value="CQ POTA">CW POTA</option>
@@ -435,6 +436,10 @@
 		<div class="settings-element">
 			<span class="settings-label">My Grid:</span><input id="MYGRID" 
 					class="settings_input sbitx-text-input" type="text" size="6" />
+		</div>
+		<div class="settings-element">
+			<span class="settings-label">Sent Exchange:</span><input id="SENT_EXCHANGE"
+					class="settings_input sbitx-text-input" type="text" size="10" />
 		</div>
 		<div class="settings-element">
 			<span class="settings-label">Sidetone:</span>
@@ -1403,9 +1408,13 @@ function FT8_list_append(list_id, text, style){
 }
 
 function FT8_transmit(message){
-	websocket_send("key " +  message + "\n");
+	websocket_send("FT8 " + message);
 	log("FT8 tx: " + message);
 //	FT8_list_append("wsjtx-rx", message);
+}
+
+function FT8_extract_message_text(token_list){
+	return token_list.slice(5).join(" ");
 }
 
 /*
@@ -1624,7 +1633,7 @@ function FT8_message_chosen(event){
 	//a message that I sent out, retransmit this
 	if (token_list[6] == mycallsign){ 
 		contact_callsign = token_list[5];
-		FT8_transmit(message_text);
+		FT8_transmit(FT8_extract_message_text(token_list));
 		return;
 	}
 
@@ -2093,6 +2102,7 @@ function open_settings(){
 function save_settings(){
 	websocket_send("MYCALLSIGN " + el("MYCALLSIGN").value);
 	websocket_send("MYGRID " + el("MYGRID").value);
+	websocket_send("SENT_EXCHANGE " + el("SENT_EXCHANGE").value.toUpperCase());
 	websocket_send("PASSKEY " + el("PASSKEY").value);
 	websocket_send("SIDETONE " + el("SIDETONE").value);
 	websocket_send("TELNETURL " + el("TELNETURL").value);

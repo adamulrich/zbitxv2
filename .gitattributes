@@ -1,0 +1,5 @@
+*.sh text eol=lf
+build text eol=lf
+start text eol=lf
+update text eol=lf
+update_zbitx text eol=lf

@@ -4789,7 +4789,7 @@ void do_control_action(char *cmd){
 
 int get_ft8_callsign(const char* message, char* other_callsign) {
 	int i = 0, j = 0, m = 0, len, cur_field = 0;
-	char fields[4][32];
+	char fields[5][32];
 	other_callsign[0] = 0;
 	len = (int)strlen(message);
 	const char* mycall = field_str("MYCALLSIGN");
@@ -4797,7 +4797,7 @@ int get_ft8_callsign(const char* message, char* other_callsign) {
 		if (message[i] == ' ' || message[i] == '\0' || j >= 31) {
 			i++;
 			while (i < len && message[i] == ' ') { i++; }
-			if (m > 3) {
+			if (m > 4) {
 				break;
 			}
 			fields[m][j] = '\0';
@@ -4817,7 +4817,7 @@ int get_ft8_callsign(const char* message, char* other_callsign) {
 			i++;
 		}
 
-		if (m > 4) {
+		if (m >= 5) {
 			return -2; // to many fields
 		}
 	}

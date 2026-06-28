@@ -1,6 +1,12 @@
 This is the initial commit for zbitxv2, this software ships with the zbitx v2 and it is an experimental upgrade to the original zbitx
 Important: The original zbitx users should try this only if they know what they are doing. it is an early release yet
 
+Additional documentation:
+
+- Run `./install-toolchain.sh --runtime --check` on a Raspberry Pi or Debian-based Linux system to install the native toolchain and core dependencies.
+- See [BUILD.md](./BUILD.md) for build and test notes.
+- See [DEPLOY.md](./DEPLOY.md) for Raspberry Pi provisioning, deployment, and update steps.
+
 This (v2) version of the software differs significantly from the v1 software in the way it handles the front-panel. 
 
 The V1 communicated with the front-panel with I2C digital lines. This caused the software to pause several times a second to service these lines causing a chugging sound as well as delays that interfered with the CW keying.

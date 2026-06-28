@@ -7,11 +7,205 @@
 #include "unpack.h"
 #include "text.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #define MAX22    ((uint32_t)4194304L)
 #define NTOKENS  ((uint32_t)2063592L)
 #define MAXGRID4 ((uint16_t)32400L)
+
+int unpack_callsign(uint32_t n28, uint8_t ip, uint8_t i3, char* result);
+uint32_t ft8_callsign_hash(const char* callsign, int bits);
+void ft8_save_hash_call(const char* callsign);
+const char* ft8_lookup_hash_call(int bits, uint32_t hash);
+
+typedef struct
+{
+    char call[12];
+    uint32_t hash22;
+    uint16_t hash12;
+} ft8_recent_call_t;
+
+static ft8_recent_call_t g_recent_calls[64];
+static int g_recent_calls_next = 0;
+
+static void normalize_callsign(const char* input, char* output)
+{
+    int start = 0;
+    int end = (int)strlen(input);
+    int length;
+    int i;
+
+    memset(output, 0, 12);
+
+    while (start < end && input[start] == ' ')
+    {
+        ++start;
+    }
+    while (end > start && input[end - 1] == ' ')
+    {
+        --end;
+    }
+    if (end - start >= 2 && input[start] == '<' && input[end - 1] == '>')
+    {
+        ++start;
+        --end;
+    }
+
+    length = end - start;
+    if (length > 11)
+    {
+        length = 11;
+    }
+
+    for (i = 0; i < length; ++i)
+    {
+        output[i] = to_upper(input[start + i]);
+    }
+    output[length] = '\0';
+}
+
+uint32_t ft8_callsign_hash(const char* callsign, int bits)
+{
+    static const uint64_t kHashPrime = 47055833459ULL;
+    char normalized[12];
+    uint64_t n = 0;
+    int i;
+
+    normalize_callsign(callsign, normalized);
+    for (i = 0; i < 11; ++i)
+    {
+        char ch = (normalized[i] != '\0') ? normalized[i] : ' ';
+        int idx = char_index(" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/", ch);
+        if (idx < 0)
+        {
+            idx = 0;
+        }
+        n = n * 38 + (uint64_t)idx;
+    }
+
+    return (uint32_t)((kHashPrime * n) >> (64 - bits));
+}
+
+void ft8_save_hash_call(const char* callsign)
+{
+    char normalized[12];
+    int i;
+
+    normalize_callsign(callsign, normalized);
+    if (normalized[0] == '\0')
+    {
+        return;
+    }
+    if (equals(normalized, "CQ") || equals(normalized, "DE") || equals(normalized, "QRZ"))
+    {
+        return;
+    }
+
+    for (i = 0; i < (int)(sizeof(g_recent_calls) / sizeof(g_recent_calls[0])); ++i)
+    {
+        if (equals(g_recent_calls[i].call, normalized))
+        {
+            g_recent_calls[i].hash12 = (uint16_t)ft8_callsign_hash(normalized, 12);
+            g_recent_calls[i].hash22 = ft8_callsign_hash(normalized, 22);
+            return;
+        }
+    }
+
+    strncpy(g_recent_calls[g_recent_calls_next].call, normalized, sizeof(g_recent_calls[g_recent_calls_next].call) - 1);
+    g_recent_calls[g_recent_calls_next].call[sizeof(g_recent_calls[g_recent_calls_next].call) - 1] = '\0';
+    g_recent_calls[g_recent_calls_next].hash12 = (uint16_t)ft8_callsign_hash(normalized, 12);
+    g_recent_calls[g_recent_calls_next].hash22 = ft8_callsign_hash(normalized, 22);
+    g_recent_calls_next = (g_recent_calls_next + 1) % (int)(sizeof(g_recent_calls) / sizeof(g_recent_calls[0]));
+}
+
+const char* ft8_lookup_hash_call(int bits, uint32_t hash)
+{
+    int i;
+
+    for (i = 0; i < (int)(sizeof(g_recent_calls) / sizeof(g_recent_calls[0])); ++i)
+    {
+        if (g_recent_calls[i].call[0] == '\0')
+        {
+            continue;
+        }
+        if ((bits == 12 && g_recent_calls[i].hash12 == hash) || (bits == 22 && g_recent_calls[i].hash22 == hash))
+        {
+            return g_recent_calls[i].call;
+        }
+    }
+
+    return NULL;
+}
+
+static const char* kARRLSections[] = {
+    "AB", "AK", "AL", "AR", "AZ", "BC", "CO", "CT", "DE", "EB",
+    "EMA", "ENY", "EPA", "EWA", "GA", "GTA", "IA", "ID", "IL", "IN",
+    "KS", "KY", "LA", "LAX", "MAR", "MB", "MDC", "ME", "MI", "MN",
+    "MO", "MS", "MT", "NC", "ND", "NE", "NFL", "NH", "NL", "NLI",
+    "NM", "NNJ", "NNY", "NT", "NTX", "NV", "OH", "OK", "ONE", "ONN",
+    "ONS", "OR", "ORG", "PAC", "PR", "QC", "RI", "SB", "SC", "SCV",
+    "SD", "SDG", "SF", "SFL", "SJV", "SK", "SNJ", "STX", "SV", "TN",
+    "UT", "VA", "VI", "VT", "WCF", "WI", "WMA", "WNY", "WPA", "WTX",
+    "WV", "WWA", "WY", "DX"
+};
+
+static const int kNumARRLSections = (int)(sizeof(kARRLSections) / sizeof(kARRLSections[0]));
+
+static int unpack_field_day(const uint8_t* a77, uint8_t n3, char* call_to, char* call_de, char* extra)
+{
+    uint32_t n28a;
+    uint32_t n28b;
+    uint8_t has_r;
+    uint8_t n4;
+    uint8_t k3;
+    uint8_t section_index;
+    int transmitter_count;
+    char exchange[8];
+
+    n28a = ((uint32_t)a77[0] << 20);
+    n28a |= ((uint32_t)a77[1] << 12);
+    n28a |= ((uint32_t)a77[2] << 4);
+    n28a |= ((uint32_t)a77[3] >> 4);
+
+    n28b = ((uint32_t)(a77[3] & 0x0F) << 24);
+    n28b |= ((uint32_t)a77[4] << 16);
+    n28b |= ((uint32_t)a77[5] << 8);
+    n28b |= ((uint32_t)a77[6]);
+
+    has_r = (a77[7] >> 7) & 0x01;
+    n4 = (a77[7] >> 3) & 0x0F;
+    k3 = a77[7] & 0x07;
+    section_index = (a77[8] >> 1) & 0x7F;
+
+    if (k3 > 5 || section_index >= kNumARRLSections)
+    {
+        return -1;
+    }
+
+    if (unpack_callsign(n28a, 0, 0, call_to) < 0)
+    {
+        return -1;
+    }
+    if (unpack_callsign(n28b, 0, 0, call_de) < 0)
+    {
+        return -1;
+    }
+
+    transmitter_count = (n3 == 3) ? (n4 + 1) : (n4 + 17);
+    sprintf(exchange, "%d%c", transmitter_count, 'A' + k3);
+
+    extra[0] = '\0';
+    if (has_r)
+    {
+        strcat(extra, "R ");
+    }
+    strcat(extra, exchange);
+    strcat(extra, " ");
+    strcat(extra, kARRLSections[section_index]);
+
+    return 0;
+}
 
 // n28 is a 28-bit integer, e.g. n28a or n28b, containing all the
 // call sign bits from a packed message.
@@ -64,12 +258,15 @@ int unpack_callsign(uint32_t n28, uint8_t ip, uint8_t i3, char* result)
     if (n28 < MAX22)
     {
         // This is a 22-bit hash of a result
-        // TODO: implement
-        //strcpy(result, "<...>");
-         result[0] = '<';
-         int_to_dd(result + 1, n28, 7, false);
-         result[8] = '>';
-         result[9] = '\0';
+        const char* resolved = ft8_lookup_hash_call(22, n28);
+        if (resolved != NULL)
+        {
+            strcpy(result, resolved);
+        }
+        else
+        {
+            strcpy(result, "<...>");
+        }
         return 0;
     }
 
@@ -107,6 +304,8 @@ int unpack_callsign(uint32_t n28, uint8_t ip, uint8_t i3, char* result)
             strcat(result, "/P");
         }
     }
+
+    ft8_save_hash_call(result);
 
     return 0; // Success
 }
@@ -302,16 +501,19 @@ int unpack_nonstandard(const uint8_t* a77, char* call_to, char* call_de, char* e
     }
 
     char call_3[15];
-    // should replace with hash12(n12, call_3);
-    strcpy(call_3, "<...>");
-    // call_3[0] = '<';
-    // int_to_dd(call_3 + 1, n12, 4, false);
-    // call_3[5] = '>';
-    // call_3[6] = '\0';
+    const char* resolved = ft8_lookup_hash_call(12, n12);
+    if (resolved != NULL)
+    {
+        strcpy(call_3, resolved);
+    }
+    else
+    {
+        strcpy(call_3, "<...>");
+    }
 
     char* call_1 = (iflip) ? c11 : call_3;
     char* call_2 = (iflip) ? call_3 : c11;
-    //save_hash_call(c11_trimmed);
+    ft8_save_hash_call(trim(c11));
 
     if (icq == 0)
     {
@@ -360,10 +562,11 @@ int unpack77_fields(const uint8_t* a77, char* call_to, char* call_de, char* extr
         // else if (i3 == 0 && n3 == 2) {
         //     // 0.2  PA3XYZ/P R 590003 IO91NP           28 1 1 3 12 25   70   EU VHF contest
         // }
-        // else if (i3 == 0 && (n3 == 3 || n3 == 4)) {
-        //     // 0.3   WA9XYZ KA1ABC R 16A EMA            28 28 1 4 3 7    71   ARRL Field Day
-        //     // 0.4   WA9XYZ KA1ABC R 32A EMA            28 28 1 4 3 7    71   ARRL Field Day
-        // }
+        else if (n3 == 3 || n3 == 4)
+        {
+            // 0.3 / 0.4  ARRL Field Day
+            return unpack_field_day(a77, n3, call_to, call_de, extra);
+        }
         else if (n3 == 5)
         {
             // 0.5   0123456789abcdef01                 71               71   Telemetry (18 hex)

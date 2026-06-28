@@ -692,10 +692,99 @@ float ft8_next_sample(){
 }
 
 /* these are used to process the current message */
-static char m1[32], m2[32], m3[32], m4[32], signal_strength[10], mygrid[10],
+static char m1[32], m2[32], m3[32], m4[32], m5[32], signal_strength[10], mygrid[10],
 	reply_message[100];
 static int rx_pitch, tx_pitch, confidence_score, msg_time; 
 static const char *call, *exchange, *report_send, *report_received, *mycall;
+
+static int ft8_is_field_day_class_token(const char *token){
+	int length = strlen(token);
+	int i;
+
+	if (length < 2 || length > 3)
+		return 0;
+
+	for (i = 0; i < length - 1; i++){
+		if (!isdigit((unsigned char)token[i]))
+			return 0;
+	}
+
+	if (token[length - 1] < 'A' || token[length - 1] > 'F')
+		return 0;
+
+	int count = atoi(token);
+	return count >= 1 && count <= 32;
+}
+
+static int ft8_is_section_token(const char *token){
+	int length = strlen(token);
+	int i;
+
+	if (length < 2 || length > 3)
+		return 0;
+
+	for (i = 0; i < length; i++){
+		if (!isalpha((unsigned char)token[i]))
+			return 0;
+	}
+
+	return 1;
+}
+
+static int ft8_is_field_day_exchange_tokens(const char *class_token, const char *section_token){
+	return ft8_is_field_day_class_token(class_token) && ft8_is_section_token(section_token);
+}
+
+static int ft8_message_has_field_day_exchange(){
+	if (m5[0]){
+		return !strcmp(m3, "R") && ft8_is_field_day_exchange_tokens(m4, m5);
+	}
+
+	return ft8_is_field_day_exchange_tokens(m3, m4);
+}
+
+static int ft8_message_has_field_day_ack(){
+	return !strcmp(m3, "R") && ft8_is_field_day_exchange_tokens(m4, m5);
+}
+
+static void ft8_get_sent_exchange_value(char *dest){
+	const char *configured_exchange = field_str("SENT_EXCHANGE");
+
+	if (configured_exchange && strlen(configured_exchange)){
+		strcpy(dest, configured_exchange);
+		return;
+	}
+
+	strcpy(dest, field_str("MYGRID"));
+	dest[4] = 0;
+}
+
+static void ft8_get_received_exchange_value(char *dest){
+	if (m5[0] && !strcmp(m3, "R")){
+		sprintf(dest, "%s %s", m4, m5);
+	}
+	else if (m4[0] && ft8_is_field_day_exchange_tokens(m3, m4)){
+		sprintf(dest, "%s %s", m3, m4);
+	}
+	else if (m4[0]){
+		strcpy(dest, m4);
+	}
+	else {
+		strcpy(dest, m3);
+	}
+}
+
+static void ft8_build_exchange_reply(char *dest, int with_r_prefix){
+	char sent_exchange[32];
+
+	ft8_get_sent_exchange_value(sent_exchange);
+	if (with_r_prefix){
+		sprintf(dest, "%s %s R %s", call, mycall, sent_exchange);
+	}
+	else {
+		sprintf(dest, "%s %s %s", call, mycall, sent_exchange);
+	}
+}
 
 int ft8_message_tokenize(char *message){
 	char *p;
@@ -739,12 +828,23 @@ int ft8_message_tokenize(char *message){
 		p = strtok(NULL, " \r\n");
 		if (p){
 			strcpy(m4, p);
+
+			p = strtok(NULL, " \r\n");
+			if (p)
+				strcpy(m5, p);
+			else
+				m5[0] = 0;
 		}
-		else 
+		else {
 			m4[0] = 0;
+			m5[0] = 0;
+		}
 	}
-	else
+	else {
 		m3[0] = 0;
+		m4[0] = 0;
+		m5[0] = 0;
+	}
 
 	return 0;
 }
@@ -770,29 +870,40 @@ void ft8_on_start_qso(char *message){
     if (!strcmp(m2, mycall)){ // own transmission clicked - restart qso
 		field_set("CALL", m1);
 		call = m1;
-		sprintf(reply_message, "%s %s %s", call, mycall, mygrid); //
+		ft8_build_exchange_reply(reply_message, 0);
 	}
 	else if (!strcmp(m1, "CQ")){
+		char received_exchange[32];
 		if (m4[0]){
 			field_set("CALL", m3);
-			field_set("EXCH", m4);
+			ft8_get_received_exchange_value(received_exchange);
+			field_set("EXCH", received_exchange);
 			field_set("SENT", signal_strength);
 		}
 		else {
 			field_set("CALL", m2);
-			field_set("EXCH", m3);
+			ft8_get_received_exchange_value(received_exchange);
+			field_set("EXCH", received_exchange);
 			field_set("SENT", signal_strength);
 		}
-		sprintf(reply_message, "%s %s %s", call, mycall, mygrid);
+		ft8_build_exchange_reply(reply_message, 0);
 	}
 	//whoa, someone cold called us
 	else if (!strcmp(m1, mycall)){
 		char cur_call[20];
+		char received_exchange[32];
 	    get_field_value_by_label("CALL", cur_call);
 		field_set("CALL", m2);
 		field_set("SENT", signal_strength);
-		//they might have directly sent us a signal report
-		if (isalpha(m3[0]) && isalpha(m3[1]) && strncmp(m3,"RR",2)!=0){ // R- RR are not EXCH
+		//they might have directly sent us a contest exchange
+		if (ft8_message_has_field_day_exchange()){
+			ft8_get_received_exchange_value(received_exchange);
+			field_set("EXCH", received_exchange);
+			field_set("RECV", signal_strength);
+			ft8_build_exchange_reply(reply_message, !ft8_message_has_field_day_ack());
+		}
+		//they might have directly sent us a grid exchange
+		else if (isalpha(m3[0]) && isalpha(m3[1]) && strncmp(m3,"RR",2)!=0){ // R- RR are not EXCH
 			field_set("EXCH", m3);
 			sprintf(reply_message, "%s %s %s", call, mycall, signal_strength);
 		}
@@ -806,15 +917,23 @@ void ft8_on_start_qso(char *message){
 	}
 	else { //we are breaking into someone else's qso
 		field_set("CALL", m2);
-		if (isalpha(m3[0]) && isalpha(m3[1]) && strncmp(m3,"RR",2)!=0){ // R- RR are not EXCH
+		if (ft8_message_has_field_day_exchange()){
+			char received_exchange[32];
+			ft8_get_received_exchange_value(received_exchange);
+			field_set("EXCH", received_exchange);
+		}
+		else if (isalpha(m3[0]) && isalpha(m3[1]) && strncmp(m3,"RR",2)!=0){ // R- RR are not EXCH
 			field_set("EXCH", m3); // the gridId is valid - use it
 		} else {
 			field_set("EXCH", "");
 		}
 		field_set("SENT", signal_strength);
-		sprintf(reply_message, "%s %s %s", call, mycall, mygrid); //signal_strength);
+		ft8_build_exchange_reply(reply_message, 0);
 	}
-	field_set("NR", mygrid);
+	field_set("NR", field_str("SENT_EXCHANGE"));
+	if (!strlen(field_str("NR"))){
+		field_set("NR", mygrid);
+	}
 	ft8_tx(reply_message, tx_pitch);
 }
 
@@ -832,6 +951,25 @@ void ft8_on_signal_report(){
 	else{ 
 		field_set("RECV", m3);	
 		sprintf(reply_message, "%s %s R%s", call, mycall, report_send);  	
+		ft8_tx(reply_message, tx_pitch);
+	}
+}
+
+void ft8_on_field_day_exchange(){
+	char received_exchange[32];
+
+	field_set("CALL", m2);
+	ft8_get_received_exchange_value(received_exchange);
+	field_set("EXCH", received_exchange);
+	field_set("RECV", signal_strength);
+
+	if (ft8_message_has_field_day_ack()){
+		sprintf(reply_message, "%s %s RR73", call, mycall);
+		ft8_tx(reply_message, tx_pitch);
+		enter_qso();
+	}
+	else {
+		ft8_build_exchange_reply(reply_message, 1);
 		ft8_tx(reply_message, tx_pitch);
 	}
 }
@@ -899,6 +1037,10 @@ void ft8_process(char *message, int operation){
 	if (!strlen(call))
 		return;
 
+	if (ft8_message_has_field_day_exchange()){
+		ft8_on_field_day_exchange();
+		return;
+	}
 
 	//this is a signal report, at times, other call can just send their sig report
 	if (m3[0] == '-' || (m3[0] == 'R' && m3[1] == '-') || m3[0] == '+' || (m3[0] == 'R' && m3[1] == '+')){

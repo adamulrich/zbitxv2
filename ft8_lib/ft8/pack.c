@@ -10,6 +10,347 @@
 #define MAX22    ((uint32_t)4194304L)
 #define MAXGRID4 ((uint16_t)32400)
 
+int32_t pack28(const char* callsign);
+uint32_t ft8_callsign_hash(const char* callsign, int bits);
+void ft8_save_hash_call(const char* callsign);
+
+static const char* kARRLSections[] = {
+    "AB", "AK", "AL", "AR", "AZ", "BC", "CO", "CT", "DE", "EB",
+    "EMA", "ENY", "EPA", "EWA", "GA", "GTA", "IA", "ID", "IL", "IN",
+    "KS", "KY", "LA", "LAX", "MAR", "MB", "MDC", "ME", "MI", "MN",
+    "MO", "MS", "MT", "NC", "ND", "NE", "NFL", "NH", "NL", "NLI",
+    "NM", "NNJ", "NNY", "NT", "NTX", "NV", "OH", "OK", "ONE", "ONN",
+    "ONS", "OR", "ORG", "PAC", "PR", "QC", "RI", "SB", "SC", "SCV",
+    "SD", "SDG", "SF", "SFL", "SJV", "SK", "SNJ", "STX", "SV", "TN",
+    "UT", "VA", "VI", "VT", "WCF", "WI", "WMA", "WNY", "WPA", "WTX",
+    "WV", "WWA", "WY", "DX"
+};
+
+static const int kNumARRLSections = (int)(sizeof(kARRLSections) / sizeof(kARRLSections[0]));
+
+static int parse_field_day_class(const char* token, int* transmitter_count, int* class_index)
+{
+    int length = strlen(token);
+    int count;
+    char class_char;
+
+    if (length < 2 || length > 3)
+    {
+        return -1;
+    }
+
+    class_char = to_upper(token[length - 1]);
+    if (class_char < 'A' || class_char > 'F')
+    {
+        return -1;
+    }
+
+    count = dd_to_int(token, length - 1);
+    if (count < 1 || count > 32)
+    {
+        return -1;
+    }
+
+    *transmitter_count = count;
+    *class_index = class_char - 'A';
+    return 0;
+}
+
+static int find_arrl_section(const char* token)
+{
+    char section[4];
+    int i;
+
+    if (strlen(token) < 2 || strlen(token) > 3)
+    {
+        return -1;
+    }
+
+    for (i = 0; token[i] != 0 && i < 3; ++i)
+    {
+        section[i] = to_upper(token[i]);
+    }
+    section[i] = '\0';
+
+    for (i = 0; i < kNumARRLSections; ++i)
+    {
+        if (equals(section, kARRLSections[i]))
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+static int pack77_field_day(const char* msg, uint8_t* b77)
+{
+    char msg_copy[64];
+    char* token;
+    char* tokens[5];
+    int num_tokens = 0;
+    int32_t n28a;
+    int32_t n28b;
+    int has_r = 0;
+    int transmitter_count;
+    int class_index;
+    int section_index;
+    int n3;
+    int n4;
+    int i;
+
+    strncpy(msg_copy, msg, sizeof(msg_copy) - 1);
+    msg_copy[sizeof(msg_copy) - 1] = '\0';
+
+    token = strtok(msg_copy, " ");
+    while (token != NULL && num_tokens < 5)
+    {
+        tokens[num_tokens++] = token;
+        token = strtok(NULL, " ");
+    }
+
+    if (num_tokens != 4 && num_tokens != 5)
+    {
+        return -1;
+    }
+
+    if (num_tokens == 5)
+    {
+        if (!equals(tokens[2], "R"))
+        {
+            return -1;
+        }
+        has_r = 1;
+    }
+
+    if (parse_field_day_class(tokens[num_tokens - 2], &transmitter_count, &class_index) < 0)
+    {
+        return -1;
+    }
+
+    section_index = find_arrl_section(tokens[num_tokens - 1]);
+    if (section_index < 0)
+    {
+        return -1;
+    }
+
+    n28a = pack28(tokens[0]);
+    n28b = pack28(tokens[1]);
+    if (n28a < 0 || n28b < 0)
+    {
+        return -1;
+    }
+
+    if (transmitter_count <= 16)
+    {
+        n3 = 3;
+        n4 = transmitter_count - 1;
+    }
+    else
+    {
+        n3 = 4;
+        n4 = transmitter_count - 17;
+    }
+
+    for (i = 0; i < 10; ++i)
+    {
+        b77[i] = 0;
+    }
+
+    b77[0] = (uint8_t)(n28a >> 20);
+    b77[1] = (uint8_t)(n28a >> 12);
+    b77[2] = (uint8_t)(n28a >> 4);
+    b77[3] = (uint8_t)((n28a << 4) | (n28b >> 24));
+    b77[4] = (uint8_t)(n28b >> 16);
+    b77[5] = (uint8_t)(n28b >> 8);
+    b77[6] = (uint8_t)(n28b);
+    b77[7] = (uint8_t)((has_r << 7) | (n4 << 3) | class_index);
+    b77[8] = (uint8_t)(section_index << 1);
+    b77[9] = (uint8_t)((n3 << 6) & 0xC0);
+
+    return 0;
+}
+
+static int is_bracketed_call(const char* callsign)
+{
+    size_t length = strlen(callsign);
+    return length >= 3 && callsign[0] == '<' && callsign[length - 1] == '>';
+}
+
+static void strip_bracketed_call(const char* input, char* output, size_t output_size)
+{
+    size_t start = 0;
+    size_t end = strlen(input);
+    size_t i;
+
+    memset(output, 0, output_size);
+
+    if (is_bracketed_call(input))
+    {
+        start = 1;
+        end -= 1;
+    }
+
+    if (end - start >= output_size)
+    {
+        end = start + output_size - 1;
+    }
+
+    for (i = start; i < end; ++i)
+    {
+        output[i - start] = to_upper(input[i]);
+    }
+    output[end - start] = '\0';
+}
+
+static uint64_t pack58_callsign(const char* callsign)
+{
+    uint64_t n58 = 0;
+    char normalized[12];
+    int i;
+
+    strip_bracketed_call(callsign, normalized, sizeof(normalized));
+    for (i = 0; i < 11; ++i)
+    {
+        char ch = (normalized[i] != '\0') ? normalized[i] : ' ';
+        int idx = char_index(" 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ/", ch);
+        if (idx < 0)
+        {
+            return UINT64_MAX;
+        }
+        n58 = n58 * 38 + (uint64_t)idx;
+    }
+
+    return n58;
+}
+
+static int pack77_nonstandard(const char* msg, uint8_t* b77)
+{
+    char msg_copy[64];
+    char* tokens[4];
+    int num_tokens = 0;
+    char* token;
+    uint32_t n12;
+    uint64_t n58;
+    uint8_t iflip = 0;
+    uint8_t nrpt = 0;
+    uint8_t icq = 0;
+    const char* full_call = NULL;
+    const char* hashed_call = NULL;
+    const char* extra = NULL;
+
+    strncpy(msg_copy, msg, sizeof(msg_copy) - 1);
+    msg_copy[sizeof(msg_copy) - 1] = '\0';
+
+    token = strtok(msg_copy, " ");
+    while (token != NULL && num_tokens < 4)
+    {
+        tokens[num_tokens++] = token;
+        token = strtok(NULL, " ");
+    }
+    if (token != NULL || num_tokens < 2)
+    {
+        return -1;
+    }
+
+    if (equals(tokens[0], "CQ"))
+    {
+        if (num_tokens != 2)
+        {
+            return -1;
+        }
+
+        full_call = tokens[1];
+        icq = 1;
+    }
+    else
+    {
+        if (num_tokens > 3)
+        {
+            return -1;
+        }
+        extra = (num_tokens == 3) ? tokens[2] : NULL;
+        if (extra != NULL)
+        {
+            if (equals(extra, "RRR"))
+            {
+                nrpt = 1;
+            }
+            else if (equals(extra, "RR73"))
+            {
+                nrpt = 2;
+            }
+            else if (equals(extra, "73"))
+            {
+                nrpt = 3;
+            }
+            else
+            {
+                return -1;
+            }
+        }
+
+        if (is_bracketed_call(tokens[0]) && !is_bracketed_call(tokens[1]))
+        {
+            hashed_call = tokens[0];
+            full_call = tokens[1];
+            iflip = 0;
+        }
+        else if (!is_bracketed_call(tokens[0]) && is_bracketed_call(tokens[1]))
+        {
+            full_call = tokens[0];
+            hashed_call = tokens[1];
+            iflip = 1;
+        }
+        else if (pack28(tokens[0]) < 0 && pack28(tokens[1]) >= 0)
+        {
+            full_call = tokens[0];
+            hashed_call = tokens[1];
+            iflip = 1;
+        }
+        else if (pack28(tokens[1]) < 0 && pack28(tokens[0]) >= 0)
+        {
+            full_call = tokens[1];
+            hashed_call = tokens[0];
+            iflip = 0;
+        }
+        else
+        {
+            return -1;
+        }
+    }
+
+    n58 = pack58_callsign(full_call);
+    if (n58 == UINT64_MAX)
+    {
+        return -1;
+    }
+
+    if (icq == 0)
+    {
+        n12 = ft8_callsign_hash(hashed_call, 12);
+        ft8_save_hash_call(hashed_call);
+    }
+    else
+    {
+        n12 = 0;
+    }
+    ft8_save_hash_call(full_call);
+
+    b77[0] = (uint8_t)(n12 >> 4);
+    b77[1] = (uint8_t)((n12 << 4) | ((n58 >> 54) & 0x0F));
+    b77[2] = (uint8_t)(n58 >> 46);
+    b77[3] = (uint8_t)(n58 >> 38);
+    b77[4] = (uint8_t)(n58 >> 30);
+    b77[5] = (uint8_t)(n58 >> 22);
+    b77[6] = (uint8_t)(n58 >> 14);
+    b77[7] = (uint8_t)(n58 >> 6);
+    b77[8] = (uint8_t)(((n58 & 0x3F) << 2) | (iflip << 1) | (nrpt >> 1));
+    b77[9] = (uint8_t)(((nrpt & 0x01) << 7) | (icq << 6) | (4 << 3));
+
+    return 0;
+}
+
 // TODO: This is wasteful, should figure out something more elegant
 const char A0[] = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ+-./?";
 const char A1[] = " 0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
@@ -21,6 +362,14 @@ const char A4[] = " ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 // into a 28-bit integer.
 int32_t pack28(const char* callsign)
 {
+    if (is_bracketed_call(callsign))
+    {
+        char inner_call[16];
+        strip_bracketed_call(callsign, inner_call, sizeof(inner_call));
+        ft8_save_hash_call(inner_call);
+        return NTOKENS + ft8_callsign_hash(inner_call, 22);
+    }
+
     // Check for special tokens first
     if (starts_with(callsign, "DE "))
         return 0;
@@ -31,9 +380,31 @@ int32_t pack28(const char* callsign)
 
     if (starts_with(callsign, "CQ_"))
     {
-        int nnum = 0, nlet = 0;
+        char modifier[5] = { ' ', ' ', ' ', ' ', '\0' };
+        int len = 0;
+        int32_t n28 = 0;
 
-        // TODO:
+        while (len < 4 && callsign[3 + len] != ' ' && callsign[3 + len] != 0)
+        {
+            char ch = to_upper(callsign[3 + len]);
+            if (char_index(A4, ch) < 0)
+            {
+                return -1;
+            }
+            modifier[len++] = ch;
+        }
+
+        for (len = 0; len < 4; ++len)
+        {
+            int idx = char_index(A4, modifier[len]);
+            if (idx < 0)
+            {
+                return -1;
+            }
+            n28 = n28 * 27 + idx;
+        }
+
+        return 1003 + n28;
     }
 
     // TODO: Check for <...> callsign
@@ -166,32 +537,79 @@ uint16_t packgrid(const char* grid4)
 // Pack Type 1 (Standard 77-bit message) and Type 2 (ditto, with a "/P" call)
 int pack77_1(const char* msg, uint8_t* b77)
 {
-    // Locate the first delimiter
-    const char* s1 = strchr(msg, ' ');
-    if (s1 == 0)
-        return -1;
+    char msg_copy[64];
+    char* tokens[4];
+    int num_tokens = 0;
+    char* token;
+    char cq_modifier[8];
+    const char* call1;
+    const char* call2;
+    const char* extra = 0;
 
-    const char* call1 = msg; // 1st call
-    const char* call2 = s1 + 1; // 2nd call
+    strncpy(msg_copy, msg, sizeof(msg_copy) - 1);
+    msg_copy[sizeof(msg_copy) - 1] = '\0';
+
+    token = strtok(msg_copy, " ");
+    while (token != 0 && num_tokens < 4)
+    {
+        tokens[num_tokens++] = token;
+        token = strtok(0, " ");
+    }
+
+    if (token != 0 || num_tokens < 2)
+    {
+        return -1;
+    }
+
+    call1 = tokens[0];
+    call2 = tokens[1];
+
+    if (equals(tokens[0], "CQ") && num_tokens == 4)
+    {
+        snprintf(cq_modifier, sizeof(cq_modifier), "CQ_%s", tokens[1]);
+        call1 = cq_modifier;
+        call2 = tokens[2];
+        extra = tokens[3];
+    }
+    else if (num_tokens == 3)
+    {
+        extra = tokens[2];
+    }
+    else if (num_tokens > 3)
+    {
+        return -1;
+    }
 
     int32_t n28a = pack28(call1);
     int32_t n28b = pack28(call2);
-
-    if (n28a < 0 || n28b < 0)
-        return -1;
-
     uint16_t igrid4;
 
-    // Locate the second delimiter
-    const char* s2 = strchr(s1 + 1, ' ');
-    if (s2 != 0)
+    if (extra != 0)
     {
-        igrid4 = packgrid(s2 + 1);
+        igrid4 = packgrid(extra);
     }
     else
     {
         // Two callsigns, no grid/report
         igrid4 = packgrid(0);
+    }
+
+    if (n28a < 0 || n28b < 0)
+    {
+        if (extra == 0 || (n28a < 0 && n28b < 0))
+        {
+            return -1;
+        }
+        if (n28a < 0)
+        {
+            ft8_save_hash_call(call1);
+            n28a = NTOKENS + ft8_callsign_hash(call1, 22);
+        }
+        if (n28b < 0)
+        {
+            ft8_save_hash_call(call2);
+            n28b = NTOKENS + ft8_callsign_hash(call2, 22);
+        }
     }
 
     uint8_t i3 = 1; // No suffix or /R
@@ -283,7 +701,17 @@ void packtext77(const char* text, uint8_t* b77)
 
 int pack77(const char* msg, uint8_t* c77)
 {
+    if (0 == pack77_field_day(msg, c77))
+    {
+        return 0;
+    }
+
     // Check Type 1 (Standard 77-bit message) or Type 2, with optional "/P"
+    if (0 == pack77_nonstandard(msg, c77))
+    {
+        return 0;
+    }
+
     if (0 == pack77_1(msg, c77))
     {
         return 0;

@@ -1,6 +1,6 @@
 #!/bin/sh -e
-# Note: the '-e' flag will make the script stop immediately upon error with 
-# the error reflected in the environment.  This lets one issue commands like
+# Note: the '-e' flag will make the script stop immediately upon error with
+# the error reflected in the environment. This lets one issue commands like
 # "./build sbitx && ./sbitx" to build then run if it built correctly, and not
 # run if the build failed.
 F=$@
@@ -12,6 +12,18 @@ F=$@
    F=sbitx
 }
 WORKING_DIRECTORY=`pwd`
+EXTRA_CFLAGS=
+EXTRA_SRCS=
+WIRINGPI_LIB=-lwiringPi
+FT8_INPUTS=ft8_lib/libft8.a
+
+if [ "${DEV_MODE:-0}" = "1" ]; then
+  EXTRA_CFLAGS="-DDEV_MODE -Idevshim"
+  EXTRA_SRCS="devshim/wiringpi_compat.c"
+  WIRINGPI_LIB=
+  FT8_INPUTS="ft8_lib/ft8/constants.c ft8_lib/ft8/encode.c ft8_lib/ft8/pack.c ft8_lib/ft8/text.c ft8_lib/common/wave.c ft8_lib/ft8/crc.c ft8_lib/fft/kiss_fftr.c ft8_lib/fft/kiss_fft.c ft8_lib/ft8/decode.c ft8_lib/ft8/ldpc.c ft8_lib/ft8/unpack.c"
+fi
+
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
 date
 mkdir -p "./audio"
@@ -30,19 +42,18 @@ fi
 if [ "$F" != "sbitx" ]; then
   echo "compiling $F in $WORKING_DIRECTORY"
 else
-  VERSION=`grep VER sdr_ui.h|awk 'FNR==1{print $4}'|sed -e 's/"//g'`
+  VERSION=`grep VER sdr_ui.h | awk 'FNR==1{print $4}' | sed -e 's/"//g'`
   echo "compiling $F version $VERSION in $WORKING_DIRECTORY"
 fi
-gcc -g -o $F \
-	 vfo.c si570.c sbitx_sound.c fft_filter.c  sbitx_gtk.c sbitx_utils.c \
+gcc -g $EXTRA_CFLAGS -o $F \
+	 vfo.c si570.c sbitx_sound.c fft_filter.c sbitx_gtk.c sbitx_utils.c \
     i2cbb.c si5351v2.c ini.c hamlib.c queue.c modems.c logbook.c \
 		modem_cw.c settings_ui.c oled.c hist_disp.c ntputil.c \
-		telnet.c macros.c modem_ft8.c remote.c mongoose.c webserver.c $F.c  \
-		ft8_lib/libft8.a  \
-	-lwiringPi -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3\
+		telnet.c macros.c modem_ft8.c remote.c mongoose.c webserver.c $F.c \
+		$EXTRA_SRCS $FT8_INPUTS \
+	$WIRINGPI_LIB -lasound -lm -lfftw3 -lfftw3f -pthread -lncurses -lsqlite3 \
 	`pkg-config --cflags gtk+-3.0` `pkg-config --libs gtk+-3.0`
 
-
-#gcc -g -o start oled.c sbitx_start.c i2cbb.c -lwiringPi
+# gcc -g -o start oled.c sbitx_start.c i2cbb.c -lwiringPi
 
 echo "<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<"
