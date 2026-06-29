@@ -101,7 +101,7 @@ install_wiringpi() {
     ./build debian
   )
 
-  deb_file="$(find "${repo_dir}/debian-template" -maxdepth 1 -type f -name 'wiringpi-*.deb' | head -n 1)"
+  deb_file="$(find "${repo_dir}/debian-template" -maxdepth 1 -type f -iname 'wiringpi*.deb' | head -n 1)"
   [[ -n "${deb_file}" ]] || die "Could not find built wiringPi .deb package."
 
   info "Installing $(basename "${deb_file}")"

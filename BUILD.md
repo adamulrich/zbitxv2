@@ -6,7 +6,7 @@ It is not a Node, Python, or container project.
 ## What gets built
 
 - Main binary: `./sbitx`
-- FT8 static library: `ft8_lib/libft8.a`
+- FT8 codec objects compiled from `ft8_lib/`
 - SQLite logbook database: `data/sbitx.db` on first build
 
 The main build is defined in [Makefile](./Makefile) and [build](./build).
@@ -89,13 +89,13 @@ DEV_MODE=1 ./build sbitx
 
 Dev mode uses a local compatibility shim under `devshim/` so the code can compile without Raspberry Pi GPIO libraries. It is intended for desktop compilation and code navigation, not for hardware access.
 
-In dev mode, the FT8 objects are also compiled from source instead of linking the checked-in `ft8_lib/libft8.a`, since that archive may have been built on a different architecture.
+The FT8 objects are compiled from source instead of linking the checked-in `ft8_lib/libft8.a`, since that archive may have been built on a different architecture.
 
 What the build does:
 
 - creates `audio/`, `data/`, and `web/` if needed
 - creates `data/sbitx.db` from `data/create_db.sql` if it is missing
-- links the `sbitx` binary against GTK3, ALSA, FFTW3, SQLite3, `wiringPi`, and `ft8_lib/libft8.a`
+- links the `sbitx` binary against GTK3, ALSA, FFTW3, SQLite3, `wiringPi`, and the locally compiled FT8 objects
 
 ### FT8 library
 
@@ -150,9 +150,9 @@ The application starts:
 
 ## Troubleshooting
 
-### `ft8_lib/libft8.a` missing
+### `ft8_lib/libft8.a` has the wrong architecture
 
-Rebuild it:
+The main repository build does not require the archive. If you need the archive for standalone FT8 tools, rebuild it on the target machine:
 
 ```bash
 cd ft8_lib

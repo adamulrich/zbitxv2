@@ -15,13 +15,12 @@ WORKING_DIRECTORY=`pwd`
 EXTRA_CFLAGS=
 EXTRA_SRCS=
 WIRINGPI_LIB=-lwiringPi
-FT8_INPUTS=ft8_lib/libft8.a
+FT8_INPUTS="ft8_lib/ft8/constants.c ft8_lib/ft8/encode.c ft8_lib/ft8/pack.c ft8_lib/ft8/text.c ft8_lib/common/wave.c ft8_lib/ft8/crc.c ft8_lib/fft/kiss_fftr.c ft8_lib/fft/kiss_fft.c ft8_lib/ft8/decode.c ft8_lib/ft8/ldpc.c ft8_lib/ft8/unpack.c"
 
 if [ "${DEV_MODE:-0}" = "1" ]; then
   EXTRA_CFLAGS="-DDEV_MODE -Idevshim"
   EXTRA_SRCS="devshim/wiringpi_compat.c"
   WIRINGPI_LIB=
-  FT8_INPUTS="ft8_lib/ft8/constants.c ft8_lib/ft8/encode.c ft8_lib/ft8/pack.c ft8_lib/ft8/text.c ft8_lib/common/wave.c ft8_lib/ft8/crc.c ft8_lib/fft/kiss_fftr.c ft8_lib/fft/kiss_fft.c ft8_lib/ft8/decode.c ft8_lib/ft8/ldpc.c ft8_lib/ft8/unpack.c"
 fi
 
 echo ">>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>"
