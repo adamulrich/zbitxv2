@@ -135,6 +135,36 @@ sudo cp hosts /etc/hosts
 sudo cp hostname /etc/hostname
 ```
 
+### 9. Optional USB GPS time sync
+
+If you have a USB GPS dongle and want it to discipline both Linux system time and the DS3231 RTC used by sBitx:
+
+1. Install GPS services:
+
+```bash
+sudo apt-get install gpsd gpsd-clients chrony
+```
+
+2. Verify the GPS is visible through `gpsd`:
+
+```bash
+gpspipe -w -n 10
+```
+
+3. Start sBitx, then run:
+
+```bash
+sudo ./sync-gps-time.sh
+```
+
+The helper script reads UTC from `gpsd`, sets the Linux system clock, and then sends `rtcsync` to the running app on port `8081` so sBitx updates the DS3231 RTC and reloads the radio time.
+
+If the app is already running and Linux system time is known-good, you can update just the DS3231/app time from the sBitx command line with:
+
+```text
+\rtcsync
+```
+
 ## Wi-Fi access point setup
 
 This version expects the Pi to expose a Wi-Fi AP for the front panel.

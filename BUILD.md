@@ -186,3 +186,33 @@ That usually means the Pi provisioning steps are incomplete. Check:
 - `hw_settings.ini`
 - port `80` to `8080` redirect
 - installation path under `/home/pi/sbitx`
+
+### GPS time sync
+
+If you want a USB GPS to set Linux system time and the DS3231 RTC used by sBitx:
+
+1. Install GPS userspace tools:
+
+```bash
+sudo apt-get install gpsd gpsd-clients chrony
+```
+
+2. Confirm the GPS is producing UTC through `gpsd`:
+
+```bash
+gpspipe -w -n 10
+```
+
+3. Run the helper as root:
+
+```bash
+sudo ./sync-gps-time.sh
+```
+
+That script sets the Linux system UTC clock from GPS and, if sBitx is running on `127.0.0.1:8081`, sends the new `rtcsync` command so the app copies system UTC into the DS3231 RTC and refreshes its internal time source.
+
+You can also refresh the RTC from the current Linux system time manually inside sBitx with:
+
+```text
+\rtcsync
+```

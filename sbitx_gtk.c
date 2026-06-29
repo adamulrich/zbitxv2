@@ -4942,6 +4942,10 @@ void cmd_exec(char *cmd){
 		abort_tx();
 	else if (!strcmp(exec, "rtc"))
 		rtc_read();
+	else if (!strcmp(exec, "rtcsync")){
+		rtc_sync_from_system_time();
+		write_console(FONT_LOG, "RTC synchronized from system UTC time\n");
+	}
 	else if (!strcmp(exec, "txcal")){
 		char response[10];
 		sdr_request("txcal=", response);

@@ -31,6 +31,11 @@ These are text commands that can be entered from the keyboard
 \txpitch [in Hz]
 	Sets the tone of transmit tone of the CW. 
 	Ex: \txpitch 700
+\utc [yyyy mm dd hh mm ss]
+	Sets the UTC time in the radio and updates the DS3231 RTC.
+\rtcsync
+	Copies the current Linux system UTC time into the DS3231 RTC and refreshes
+	the time used by the radio.
 10M	
 12M
 15M

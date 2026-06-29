@@ -78,6 +78,23 @@ void rtc_write_ntp(int year, int month, int day, int hours, int minutes, int sec
 	}
 }
 
+void rtc_write_utc_time(time_t utc_time){
+	struct tm *utc = gmtime(&utc_time);
+	if (!utc){
+		printf("Unable to convert system time to UTC\n");
+		return;
+	}
+
+	rtc_write_ntp(utc->tm_year + 1900, utc->tm_mon + 1, utc->tm_mday,
+		utc->tm_hour, utc->tm_min, utc->tm_sec);
+}
+
+void rtc_sync_from_system_time(void){
+	time_t now = time(NULL);
+	rtc_write_utc_time(now);
+	rtc_read();
+}
+
 void rtc_read(){
 	uint8_t rtc_time[10];
 	char buff[100];

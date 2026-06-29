@@ -6,6 +6,7 @@ Additional documentation:
 - Run `./install-toolchain.sh --runtime --check` on a Raspberry Pi or Debian-based Linux system to install the native toolchain and core dependencies.
 - See [BUILD.md](./BUILD.md) for build and test notes.
 - See [DEPLOY.md](./DEPLOY.md) for Raspberry Pi provisioning, deployment, and update steps.
+- If you use a USB GPS for UTC, run `sudo ./sync-gps-time.sh` on the Pi to copy GPS time into Linux system time and the sBitx DS3231 RTC.
 
 This (v2) version of the software differs significantly from the v1 software in the way it handles the front-panel. 
 
