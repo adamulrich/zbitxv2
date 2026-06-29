@@ -4788,61 +4788,53 @@ void do_control_action(char *cmd){
 }
 
 int get_ft8_callsign(const char* message, char* other_callsign) {
-	int i = 0, j = 0, m = 0, len, cur_field = 0;
-	char fields[5][32];
+	int i = 0, field_count = 0, tilde_index = -1;
+	char fields[10][32];
+	char message_copy[256];
+	char *token;
 	other_callsign[0] = 0;
-	len = (int)strlen(message);
 	const char* mycall = field_str("MYCALLSIGN");
-	while (i <= len) {
-		if (message[i] == ' ' || message[i] == '\0' || j >= 31) {
-			i++;
-			while (i < len && message[i] == ' ') { i++; }
-			if (m > 4) {
-				break;
-			}
-			fields[m][j] = '\0';
-			if (cur_field == 4) {
-				if (strcmp(fields[m], "~")) {
-					return -1;  // no tilde
-				}
-			}
-			cur_field++;
-			if (cur_field > 5) {
-				m++;
-			}
-			j = 0;
-		}
-		else {
-			fields[m][j++] = message[i];
-			i++;
-		}
 
-		if (m >= 5) {
-			return -2; // to many fields
-		}
+	strncpy(message_copy, message, sizeof(message_copy) - 1);
+	message_copy[sizeof(message_copy) - 1] = 0;
+
+	token = strtok(message_copy, " \r\n");
+	while (token && field_count < 10){
+		strncpy(fields[field_count], token, sizeof(fields[field_count]) - 1);
+		fields[field_count][sizeof(fields[field_count]) - 1] = 0;
+		if (!strcmp(fields[field_count], "~"))
+			tilde_index = field_count;
+		field_count++;
+		token = strtok(NULL, " \r\n");
 	}
-	if (cur_field < 7) {
-		return -3; // to few fields
-	}
-	if (!strcmp(fields[0], "CQ")) {
-		if (m == 4) {
+
+	if (token)
+		return -2; // too many fields
+	if (tilde_index < 4 || field_count <= tilde_index + 2)
+		return -3; // malformed or too few fields
+
+	char (*msg_fields)[32] = &fields[tilde_index + 1];
+	int msg_count = field_count - (tilde_index + 1);
+
+	if (!strcmp(msg_fields[0], "CQ")) {
+		if (msg_count >= 4) {
 			i = 2; // CQ xx callsign grid
 		}
 		else {
 			i = 1; // CQ callsign grid
 		}
 	}
-	else if (!strcmp(fields[0], mycall)) {
+	else if (!strcmp(msg_fields[0], mycall)) {
 		i = 1; // mycallsign callsign
 	}
-	else if (!strcmp(fields[1], mycall)) {
+	else if (!strcmp(msg_fields[1], mycall)) {
 		i = 0; // mycallsign callsign
 	}
 	else {
 		i = 1; // callsign other -the one we hear
 	}
-	strcpy(other_callsign, fields[i]);
-	return m;
+	strcpy(other_callsign, msg_fields[i]);
+	return msg_count;
 }
 
 void pre_ft8_check(char* message) {

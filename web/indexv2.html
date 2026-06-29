@@ -1360,21 +1360,37 @@ var ft8_tx_count = 0;
 var ft8_tx_on_even = true;
 var ft8_tx_message = "";
 
-function FT8_stylize_message(text, style){
-	//tokenize the message
+function FT8_parse_line(text){
 	var token_list = text.match(/\S+/g);
-	if (token_list.length < 8 || token_list[4] != '~' || token_list.length > 9){
+	if (!token_list)
+		return null;
+
+	var tilde_index = token_list.indexOf("~");
+	if (tilde_index < 4 || tilde_index + 3 > token_list.length)
+		return null;
+
+	return {
+		token_list: token_list,
+		tilde_index: tilde_index,
+		label: text.substring(0, text.search("~")),
+		score: token_list[1],
+		snr: token_list[2],
+		dt: (tilde_index >= 5) ? token_list[3] : "",
+		freq: token_list[tilde_index - 1],
+		message_tokens: token_list.slice(tilde_index + 1)
+	};
+}
+
+function FT8_stylize_message(text, style){
+	var parsed = FT8_parse_line(text);
+	if (!parsed){
 		log("FT8_process_message: error parsing [" + text + "]");
 		return;
 	}
 
-	var index = 1;
-	var confidence_score = token_list[1];
-	var signal_strength = token_list[2];
-	var rx_frequency = token_list[3];
-	var contact_callsign = token_list[5]; 
-	var sender_callsign = token_list[6]; 
-	var message = token_list[7];
+	var message_tokens = parsed.message_tokens;
+	var contact_callsign = message_tokens[0]; 
+	var sender_callsign = message_tokens[1]; 
 	var mycallsign = $("#MYCALLSIGN").val().toUpperCase();
 	var mygrid = $("#MYGRID").val().substring(0,4).toUpperCase();
 
@@ -1391,12 +1407,15 @@ function FT8_stylize_message(text, style){
 }
 
 function FT8_list_append(list_id, text, style){
-
-	var label_position = text.search("~");
-	var label = text.substring(0,label_position);
+	var parsed = FT8_parse_line(text);
+	if (!parsed){
+		log("FT8_process_message: error parsing [" + text + "]");
+		return;
+	}
+	var label = parsed.label;
 	if (label.length == 21)
 		label = label + '  ';
-	var message = text.substring(label_position+1);
+	var message = parsed.message_tokens.join(" ");
 	var item = document.createElement("li");
 	item.innerHTML = '<span class="ft8-label">' + label 
 		+ '</span><span class="ft8-message">' + message + '</span>';
@@ -1414,7 +1433,8 @@ function FT8_transmit(message){
 }
 
 function FT8_extract_message_text(token_list){
-	return token_list.slice(5).join(" ");
+	var tilde_index = token_list.indexOf("~");
+	return token_list.slice(tilde_index + 1).join(" ");
 }
 
 /*
@@ -1429,18 +1449,19 @@ var last_qso_callsign = "";
 function FT8_process_message(text, start_call=false){
 	if (text.length == 0)
 		return;
-	//tokenize the message
-	var token_list = text.match(/\S+/g);
-	if (token_list.length < 8 || token_list[4] != '~' || token_list.length > 9){
+	var parsed = FT8_parse_line(text);
+	if (!parsed){
 		log("FT8_process_message: error parsing [" + text + "]");
 		return;
 	}
+	var token_list = parsed.token_list;
 
 	var index = 1;
-	var confidence_score = token_list[1];
-	var signal_strength = token_list[2];
-	var rx_frequency = token_list[3];
-	var contact_callsign = token_list[5];
+	var confidence_score = parsed.score;
+	var signal_strength = parsed.snr;
+	var rx_frequency = parsed.freq;
+	var message_tokens = parsed.message_tokens;
+	var contact_callsign = message_tokens[0];
 	var sender_callsign = "";
 	var message = "";
 	var message_slot_1st = true;
@@ -1453,23 +1474,23 @@ function FT8_process_message(text, start_call=false){
 	}
 
 	// the messsage can be CQ or between two parties  
-	if (token_list[5] == 'CQ'){
+	if (message_tokens[0] == 'CQ'){
 		// the message is the grid id, if msg has 3 words like 'CQ DX' skip to the callsign
-		if (token_list.length == 9){
-			sender_callsign = token_list[7];
-			message = token_list[8];
+		if (message_tokens.length >= 4){
+			sender_callsign = message_tokens[2];
+			message = message_tokens[3];
 		}
 		else {
-			sender_callsign = token_list[6];
-			message = token_list[7];
+			sender_callsign = message_tokens[1];
+			message = message_tokens[2];
 		}
 		contact_callsign == 'CQ';
 	}
 	else{ 
 		//first callsign is the called callsign, second calling callsing
-		contact_callsign = token_list[5];
-	 	sender_callsign = token_list[6]; 
-		message = token_list[7];
+		contact_callsign = message_tokens[0];
+	 	sender_callsign = message_tokens[1]; 
+		message = message_tokens[2];
 	}
 	var mycallsign = $("#MYCALLSIGN").val().toUpperCase();
 	var mygrid = $("#MYGRID").val().substring(0,4).toUpperCase();
@@ -1615,24 +1636,24 @@ function FT8_message_chosen(event){
 
 	if (message_text.length == 0)
 		return;
-	//tokenize the message
-	var token_list = message_text.match(/\S+/g);
-	if (token_list.length < 7 || token_list[4] != '~' || token_list.length > 9){
+	var parsed = FT8_parse_line(message_text);
+	if (!parsed){
 		log("FT8_process_message: error parsing [" + text + "]");
 		return;
 	}
+	var token_list = parsed.token_list;
 
 	var index = 1;
-	var confidence_score = token_list[1];
-	var signal_strength = token_list[2];
-	var rx_frequency = token_list[3];
+	var confidence_score = parsed.score;
+	var signal_strength = parsed.snr;
+	var rx_frequency = parsed.freq;
 	var mycallsign = $("#MYCALLSIGN").val().toUpperCase();
 
 	var contact_callsign = "";
 	var sender_callsign = ""
 	//a message that I sent out, retransmit this
-	if (token_list[6] == mycallsign){ 
-		contact_callsign = token_list[5];
+	if (parsed.message_tokens[1] == mycallsign){ 
+		contact_callsign = parsed.message_tokens[0];
 		FT8_transmit(FT8_extract_message_text(token_list));
 		return;
 	}
@@ -1645,11 +1666,14 @@ function FT8_message_chosen(event){
 }
 
 function FT8_new_message(text, style){
-	//log("ft8:" + text);
-	var words = text.split(' ');
+	var parsed = FT8_parse_line(text);
+	if (!parsed){
+		log("FT8_process_message: error parsing [" + text + "]");
+		return;
+	}
 	FT8_list_append("wsjtx-activity", text, style) ;
 	var mycallsign = $("#MYCALLSIGN").val().toUpperCase();
-	if (words[4] == $("#FT8-rx-freq").val() || text.search(mycallsign) >= 0)
+	if (parsed.freq == $("#FT8-rx-freq").val() || text.search(mycallsign) >= 0)
 		FT8_list_append("wsjtx-rx", text, style);
 	//now we process the message for a response if any
 	FT8_process_message(text, false);

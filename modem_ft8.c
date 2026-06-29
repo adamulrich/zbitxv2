@@ -486,8 +486,8 @@ static int sbitx_ft8_decode(float *signal, int num_samples, bool is_ft8)
            ++num_decoded;
 
 					char buff[1000];
-          sprintf(buff, "%s %3d %+03d %-4.0f ~  %s\n", time_str, 
-						cand->score, cand->snr, freq_hz, message.text);
+          sprintf(buff, "%s %3d %+03d %+4.1f %-4.0f ~  %s\n", time_str, 
+						cand->score, cand->snr, time_sec, freq_hz, message.text);
 
 
 				//message_add(char *mode, unsigned int frequency, int outgoing, char *message);
@@ -693,7 +693,7 @@ float ft8_next_sample(){
 
 /* these are used to process the current message */
 static char m1[32], m2[32], m3[32], m4[32], m5[32], signal_strength[10], mygrid[10],
-	reply_message[100];
+	reply_message[100], message_dt[10];
 static int rx_pitch, tx_pitch, confidence_score, msg_time; 
 static const char *call, *exchange, *report_send, *report_received, *mycall;
 
@@ -788,6 +788,7 @@ static void ft8_build_exchange_reply(char *dest, int with_r_prefix){
 
 int ft8_message_tokenize(char *message){
 	char *p;
+	char field4[16], field5[16];
 
 	//tokenize the message
 	p = strtok(message, " \r\n");
@@ -804,14 +805,24 @@ int ft8_message_tokenize(char *message){
 
 	p = strtok(NULL, " \r\n");
 	if (!p) return -1;
-	rx_pitch = atoi(p);
+	strcpy(field4, p);
+	strcpy(message_dt, "");
 
-	//santiy check, we should get a tilde '~' now
 	p = strtok(NULL, " \r\n");
-	if (!p)
-		return -1;
-	if (strcmp(p, "~"))
-		return -1;
+	if (!p) return -1;
+	strcpy(field5, p);
+
+	if (!strcmp(field5, "~")){
+		rx_pitch = atoi(field4);
+	}
+	else {
+		strcpy(message_dt, field4);
+		rx_pitch = atoi(field5);
+
+		p = strtok(NULL, " \r\n");
+		if (!p || strcmp(p, "~"))
+			return -1;
+	}
 
 	p = strtok(NULL, " \r\n");
 	if (!p) return -1;
