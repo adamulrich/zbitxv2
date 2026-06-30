@@ -176,6 +176,49 @@ unsigned long sound_millis = 0;
 
 struct Queue qloop;
 
+static int apply_playback_sw_params(snd_pcm_t *handle, snd_pcm_sw_params_t *params, const char *label)
+{
+	snd_pcm_uframes_t buffer_size = 0, period_size = 0;
+	int e = snd_pcm_get_params(handle, &buffer_size, &period_size);
+	if (e < 0) {
+		fprintf(stderr, "Unable to read %s PCM params: %s\n", label, snd_strerror(e));
+		return -1;
+	}
+
+	if (period_size == 0 || buffer_size == 0) {
+		fprintf(stderr, "Invalid %s PCM params: buffer=%lu period=%lu\n",
+			label, (unsigned long)buffer_size, (unsigned long)period_size);
+		return -1;
+	}
+
+	e = snd_pcm_sw_params_current(handle, params);
+	if (e < 0) {
+		fprintf(stderr, "Unable to determine current swparams for %s: %s\n",
+			label, snd_strerror(e));
+		return -1;
+	}
+
+	e = snd_pcm_sw_params_set_avail_min(handle, params, period_size);
+	if (e < 0) {
+		fprintf(stderr, "Unable to set avail_min for %s: %s\n", label, snd_strerror(e));
+		return -1;
+	}
+
+	e = snd_pcm_sw_params_set_start_threshold(handle, params, buffer_size - period_size);
+	if (e < 0) {
+		fprintf(stderr, "Unable to set start threshold for %s: %s\n", label, snd_strerror(e));
+		return -1;
+	}
+
+	e = snd_pcm_sw_params(handle, params);
+	if (e < 0) {
+		fprintf(stderr, "Unable to apply swparams for %s: %s\n", label, snd_strerror(e));
+		return -1;
+	}
+
+	return 0;
+}
+
 /* this function should be called just once in the application process.
 Calling it frequently will result in more allocation of hw_params memory blocks
 without releasing them.
@@ -291,16 +334,9 @@ int sound_start_play(char *device){
 		return(-1);
 	}
 
-	// get the current swparams
-    e = snd_pcm_sw_params_current(pcm_play_handle, swparams);
-    if (e < 0) {
-        printf("Unable to determine current swparams for playback: %s\n", snd_strerror(e));
+	if (apply_playback_sw_params(pcm_play_handle, swparams, "playback") < 0) {
+		return -1;
 	}
-
-    e = snd_pcm_sw_params_set_start_threshold(pcm_play_handle, swparams, (8192) );
-    if (e < 0) {
-        printf("Unable to set start threshold mode for playback: %s\n", snd_strerror(e));
-    }
 
 
 #if DEBUG > 0
@@ -604,6 +640,11 @@ int sound_start_loopback_play(char *device){
 	if (snd_pcm_hw_params(loopback_play_handle, hwparams) < 0) {
 		fprintf(stderr, "*Error setting loopback playback HW params.\n");
 		return(-1);
+	}
+
+	snd_pcm_sw_params_alloca(&swparams);
+	if (apply_playback_sw_params(loopback_play_handle, swparams, "loopback playback") < 0) {
+		return -1;
 	}
 
 #if DEBUG > 0

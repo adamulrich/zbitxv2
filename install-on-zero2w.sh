@@ -17,7 +17,10 @@ FILES_TO_INSTALL=(
   "Makefile"
   "build"
   "modem_ft8.c"
+  "ntputil.c"
+  "ntputil.h"
   "sbitx_gtk.c"
+  "sync-gps-time.sh"
   "ft8_lib/ft8/pack.c"
   "ft8_lib/ft8/unpack.c"
   "ft8_lib/ft8/unpack.h"
@@ -28,7 +31,7 @@ FILES_TO_INSTALL=(
 
 install_mode_for() {
   case "$1" in
-    build)
+    build|sync-gps-time.sh)
       printf '0755\n'
       ;;
     *)
