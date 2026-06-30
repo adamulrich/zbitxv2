@@ -16,6 +16,8 @@ FILES_TO_STAGE=(
   "web/indexv2.html"
   "data/default_settings.ini"
   "install-on-zero2w.sh"
+  "install-zero2w-deps.sh"
+  "sync-gps-time.sh"
 )
 
 find_usb_mount() {
@@ -58,7 +60,7 @@ require_file() {
 
 install_mode_for() {
   case "$1" in
-    build|install-on-zero2w.sh)
+    build|install-on-zero2w.sh|install-zero2w-deps.sh|sync-gps-time.sh)
       printf '0755\n'
       ;;
     *)
@@ -98,4 +100,5 @@ echo "  $BUNDLE_DIR"
 echo
 echo "On the Zero 2 W, stop the running app first, then run:"
 echo "  cd \"$BUNDLE_DIR\""
+echo "  sudo ./install-zero2w-deps.sh"
 echo "  ./install-on-zero2w.sh"
