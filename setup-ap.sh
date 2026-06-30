@@ -9,6 +9,8 @@
 
 set -e
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 AP_SSID="zbitx"
 AP_PASS="zbitx12345"
 AP_IP="192.168.4.1"
@@ -40,29 +42,8 @@ else
 fi
 
 # ── Step 2: Fix apt sources for EOL Buster ────────────────────────────────────
-info "Checking apt sources..."
-NEED_UPDATE=0
-
-if ! grep -q "archive.debian.org" /etc/apt/sources.list 2>/dev/null; then
-    info "  Updating /etc/apt/sources.list to use Debian/Raspbian archives..."
-    cat > /etc/apt/sources.list <<'EOF'
-deb [trusted=yes] http://archive.debian.org/debian buster main contrib non-free
-deb [trusted=yes] http://archive.raspbian.org/raspbian buster main contrib non-free rpi
-EOF
-    NEED_UPDATE=1
-fi
-
-if [[ ! -f /etc/apt/apt.conf.d/99no-check-valid ]]; then
-    echo 'Acquire::Check-Valid-Until "false";' > /etc/apt/apt.conf.d/99no-check-valid
-    NEED_UPDATE=1
-fi
-
-if [[ $NEED_UPDATE -eq 1 ]]; then
-    info "  Running apt-get update..."
-    apt-get update -q 2>&1 | grep -v "^W:" | tail -5 || true
-else
-    info "  Sources already configured, skipping update."
-fi
+info "Repairing legacy Buster apt sources..."
+bash "${SCRIPT_DIR}/fix-legacy-apt.sh" --update
 
 # ── Step 3: Install hostapd and dnsmasq ───────────────────────────────────────
 info "Installing hostapd and dnsmasq..."

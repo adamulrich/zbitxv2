@@ -20,6 +20,29 @@ The source-of-truth script and notes are:
 - [install.txt](./install.txt)
 - [setup-ap.sh](./setup-ap.sh)
 - [install-toolchain.sh](./install-toolchain.sh)
+- [fix-legacy-apt.sh](./fix-legacy-apt.sh)
+
+### Legacy Buster apt repair
+
+Existing radios may still be running Raspberry Pi OS Buster. Those images often
+fail to update because the normal Buster apt sources no longer resolve.
+
+This repo includes a repair helper that rewrites apt to the Raspberry Pi legacy
+mirrors:
+
+```bash
+sudo ./fix-legacy-apt.sh --update
+```
+
+That script sets the Pi to use only these Buster sources:
+
+```bash
+deb http://legacy.raspbian.org/raspbian buster main contrib non-free rpi
+deb http://legacy.raspberrypi.org/debian buster main
+```
+
+It also removes common stale backup list files, disables `Check-Valid-Until`,
+clears cached apt package lists, and runs `apt-get update`.
 
 ### 1. Install base packages
 

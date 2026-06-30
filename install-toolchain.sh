@@ -2,6 +2,7 @@
 set -euo pipefail
 
 SCRIPT_NAME="$(basename "$0")"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 WIRINGPI_REPO="https://github.com/WiringPi/WiringPi.git"
 
 usage() {
@@ -36,6 +37,19 @@ die() {
 require_linux() {
   [[ "$(uname -s)" == "Linux" ]] || die "This installer only supports Linux."
   command -v apt-get >/dev/null 2>&1 || die "This installer requires apt-get."
+}
+
+maybe_fix_legacy_buster_apt() {
+  if [[ ! -r /etc/os-release ]]; then
+    return
+  fi
+
+  # Raspberry Pi OS Buster images often need their apt sources rewritten to
+  # the legacy mirrors before apt-get update will succeed.
+  if grep -qi '^VERSION_CODENAME=buster$' /etc/os-release; then
+    info "Detected Buster. Repairing apt sources to use Raspberry Pi legacy mirrors."
+    run_as_root bash "${SCRIPT_DIR}/fix-legacy-apt.sh"
+  fi
 }
 
 is_raspberry_pi() {
@@ -165,6 +179,7 @@ done
 
 require_linux
 ensure_root_access
+maybe_fix_legacy_buster_apt
 
 BUILD_PACKAGES=(
   build-essential
