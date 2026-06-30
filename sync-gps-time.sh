@@ -68,7 +68,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 GPS_TIME=$(
-  gpspipe -w -n "$SAMPLES" 2>/dev/null | python3 - <<'PY'
+  gpspipe -w -n "$SAMPLES" 2>/dev/null | python3 -c '
 import json
 import sys
 
@@ -89,7 +89,7 @@ for line in sys.stdin:
         raise SystemExit(0)
 
 raise SystemExit(1)
-PY
+'
 ) || {
   echo "Unable to get a valid GPS UTC timestamp from gpsd." >&2
   exit 1
