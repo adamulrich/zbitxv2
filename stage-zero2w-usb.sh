@@ -4,20 +4,18 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$SCRIPT_DIR"
 STAGING_DIR_NAME="${STAGING_DIR_NAME:-zbitxv2-zero2w-update}"
-FILES_TO_STAGE=(
-  "Makefile"
-  "build"
-  "modem_ft8.c"
-  "sbitx_gtk.c"
-  "ft8_lib/ft8/pack.c"
-  "ft8_lib/ft8/unpack.c"
-  "ft8_lib/ft8/unpack.h"
-  "web/index.html"
-  "web/indexv2.html"
-  "data/default_settings.ini"
-  "install-on-zero2w.sh"
-  "install-zero2w-deps.sh"
-  "sync-gps-time.sh"
+RSYNC_EXCLUDES=(
+  ".git/"
+  ".agents/"
+  ".codex/"
+  "*.o"
+  "sbitx"
+  "ft8_lib/libft8.a"
+  "ft8_lib/test"
+  "ft8_lib/a.out"
+  "data/sbitx.db"
+  "devshim/wiringpi_compat.o"
+  "web/index.html~"
 )
 
 find_usb_mount() {
@@ -49,26 +47,6 @@ find_usb_mount() {
   return 1
 }
 
-require_file() {
-  local path="$1"
-
-  if [[ ! -f "$path" ]]; then
-    echo "Required file is missing: $path" >&2
-    exit 1
-  fi
-}
-
-install_mode_for() {
-  case "$1" in
-    build|install-on-zero2w.sh|install-zero2w-deps.sh|sync-gps-time.sh)
-      printf '0755\n'
-      ;;
-    *)
-      printf '0644\n'
-      ;;
-  esac
-}
-
 USB_ROOT="${1:-${USB_MOUNT:-}}"
 if [[ -z "$USB_ROOT" ]]; then
   USB_ROOT="$(find_usb_mount)"
@@ -85,17 +63,22 @@ if [[ ! -w "$USB_ROOT" ]]; then
   exit 1
 fi
 
+if ! command -v rsync >/dev/null 2>&1; then
+  echo "rsync was not found. Install rsync first." >&2
+  exit 1
+fi
+
 BUNDLE_DIR="$USB_ROOT/$STAGING_DIR_NAME"
 mkdir -p "$BUNDLE_DIR"
 
-for relative_path in "${FILES_TO_STAGE[@]}"; do
-  source_path="$REPO_ROOT/$relative_path"
-  dest_path="$BUNDLE_DIR/$relative_path"
-  require_file "$source_path"
-  install -D -m "$(install_mode_for "$relative_path")" "$source_path" "$dest_path"
+RSYNC_ARGS=(-a --delete)
+for pattern in "${RSYNC_EXCLUDES[@]}"; do
+  RSYNC_ARGS+=(--exclude "$pattern")
 done
 
-echo "Staged Zero 2 W source-update bundle at:"
+rsync "${RSYNC_ARGS[@]}" "$REPO_ROOT/" "$BUNDLE_DIR/"
+
+echo "Staged Zero 2 W full source tree at:"
 echo "  $BUNDLE_DIR"
 echo
 echo "On the Zero 2 W, stop the running app first, then run:"
